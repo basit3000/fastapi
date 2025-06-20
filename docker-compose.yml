@@ -2,9 +2,23 @@ version: "3.9"
 
 services:
   fastapi:
+    container_name: fastapi
     build: .
     ports:
       - "8000:8000"
     volumes:
       - ./app:/app/app
     restart: always
+    env_file:
+      - .env
+
+  mongo:
+    image: mongo:6
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
