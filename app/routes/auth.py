@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from app.models import User
+from app.models import User, ChangePasswordRequest
 from app.database import db
 from app.auth import verify_password, create_access_token, hash_password, ALGORITHM, SECRET_KEY
 from jose import JWTError, jwt
@@ -42,3 +42,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @router.get("/me")
 async def read_users_me(current_user: str = Depends(get_current_user)):
     return {"email": current_user}
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+):
+    user = await db.users.find_one({"email": current_user})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if not verify_password(request.old_password, user["password"]):
+        raise HTTPException(status_code=401, detail="Old password is incorrect.")
+    
+    new_hashed = hash_password(request.new_password)
+    await db.users.update_one({"email": current_user}, {"$set": {"password": new_hashed}})
+
+    return {"message": "Password changed successfully"}
