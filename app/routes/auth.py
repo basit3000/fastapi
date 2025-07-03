@@ -19,7 +19,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-@router.post("/register")
+@router.post("/register", status_code=status.HTTP_201_CREATED, tags=["auth"])
 async def register(user: User):
     existing = await db.users.find_one({"email": user.email})
     if existing:
@@ -30,7 +30,7 @@ async def register(user: User):
 
     return {"message": "User registered successfully."}
 
-@router.post("/login")
+@router.post("/login", tags=["auth"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.users.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password"]):
@@ -39,11 +39,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     token = create_access_token(data={"sub": user["email"]})
     return {"access_token": token, "token_type": "bearer"}
 
-@router.get("/me")
+@router.get("/me", tags=["auth"])
 async def read_users_me(current_user: str = Depends(get_current_user)):
     return {"email": current_user}
 
-@router.post("/change-password")
+@router.post("/change-password", tags=["auth"])
 async def change_password(
     request: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
