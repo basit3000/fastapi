@@ -4,8 +4,12 @@ from app.models import User, ChangePasswordRequest
 from app.database import db
 from app.auth import verify_password, create_access_token, hash_password, ALGORITHM, SECRET_KEY
 from jose import JWTError, jwt
+import logging
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -28,15 +32,19 @@ async def register(user: User):
     user_dict = {"email": user.email, "password": hash_password(user.password)}
     await db.users.insert_one(user_dict)
 
+    logger.info(f"User registered: {user.email}")
+
     return {"message": "User registered successfully."}
 
 @router.post("/login", tags=["auth"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.users.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password"]):
+        logger.warning(f"Failed login attempt for: {form_data.username}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_access_token(data={"sub": user["email"]})
+    logger.info(f"User logged in: {form_data.username}")
     return {"access_token": token, "token_type": "bearer"}
 
 @router.get("/me", tags=["auth"])
@@ -57,5 +65,7 @@ async def change_password(
     
     new_hashed = hash_password(request.new_password)
     await db.users.update_one({"email": current_user}, {"$set": {"password": new_hashed}})
+
+    logger.info(f"User changed password: {current_user}")
 
     return {"message": "Password changed successfully"}
