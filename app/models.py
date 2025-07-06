@@ -1,9 +1,10 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, constr
+from datetime import datetime 
 
 class User(BaseModel):
     email: EmailStr
-    password: str
+    password: constr(min_length=8, max_length=128)
 
 class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
+    old_password: constr(min_length=8)
+    new_password: constr(min_length=8)
