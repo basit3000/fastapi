@@ -5,6 +5,7 @@ from app.database import db
 from app.auth import verify_password, create_access_token, hash_password, ALGORITHM, SECRET_KEY
 from jose import JWTError, jwt
 import logging
+from app.services.auth_service import change_user_password
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -54,18 +55,13 @@ async def read_users_me(current_user: str = Depends(get_current_user)):
 @router.post("/change-password", tags=["auth"])
 async def change_password(
     request: ChangePasswordRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
-    user = await db.users.find_one({"email": current_user})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    if not verify_password(request.old_password, user["password"]):
-        raise HTTPException(status_code=401, detail="Old password is incorrect.")
-    
-    new_hashed = hash_password(request.new_password)
-    await db.users.update_one({"email": current_user}, {"$set": {"password": new_hashed}})
-
-    logger.info(f"User changed password: {current_user}")
-
-    return {"message": "Password changed successfully"}
+    result = await change_user_password(
+        email=current_user,
+        old_password=request.old_password,
+        new_password=request.new_password
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
