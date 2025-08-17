@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from pydantic import BaseModel, EmailStr, constr
 from app.models import User, ChangePasswordRequest
 from app.database import db
 from app.auth import verify_password, create_access_token, hash_password, ALGORITHM, SECRET_KEY
-from jose import JWTError, jwt
 import logging
-from app.services.auth_service import change_user_password
+from app.services.auth_service import change_user_password, get_current_user
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -14,18 +14,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return email
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: constr(min_length=8)
 
-@router.post("/register", status_code=status.HTTP_201_CREATED, tags=["auth"])
-async def register(user: User):
+class ChangePasswordRequest(BaseModel):
+    old_password: constr(min_length=8)
+    new_password: constr(min_length=8)
+
+class MessageResponse(BaseModel):
+    message: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+class UserResponse(BaseModel):
+    email: EmailStr
+
+def get_current_user_dep(token: str = Depends(oauth2_scheme)):
+    return get_current_user(token)
+
+@router.post("/register", status_code=status.HTTP_201_CREATED, tags=["auth"], response_model=MessageResponse)
+async def register(user: RegisterRequest):
     existing = await db.users.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered.")
@@ -37,7 +48,7 @@ async def register(user: User):
 
     return {"message": "User registered successfully."}
 
-@router.post("/login", tags=["auth"])
+@router.post("/login", tags=["auth"], response_model=TokenResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.users.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password"]):
@@ -48,14 +59,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     logger.info(f"User logged in: {form_data.username}")
     return {"access_token": token, "token_type": "bearer"}
 
-@router.get("/me", tags=["auth"])
-async def read_users_me(current_user: str = Depends(get_current_user)):
+@router.get("/me", tags=["auth"], response_model=UserResponse)
+async def read_users_me(current_user: str = Depends(get_current_user_dep)):
     return {"email": current_user}
 
-@router.post("/change-password", tags=["auth"])
+@router.post("/change-password", tags=["auth"], response_model=MessageResponse)
 async def change_password(
     request: ChangePasswordRequest,
-    current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user_dep),
 ):
     result = await change_user_password(
         email=current_user,
@@ -63,5 +74,7 @@ async def change_password(
         new_password=request.new_password
     )
     if "error" in result:
+        logger.warning(f"Password change failed for: {current_user} - {result['error']}")
         raise HTTPException(status_code=400, detail=result["error"])
-    return result
+    logger.info(f"Password changed successfully for: {current_user}")
+    return {"message": "Password changed successfully."}
